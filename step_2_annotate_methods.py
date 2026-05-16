@@ -7,16 +7,16 @@ import re
 from constants import ALL_METHODS, PROJECTS_DIR
 
 project_dict = {1: "scrimage", 2: "mltk", 3: "mallet", 4: "openaudible", 5: "freecol"}
-method_dict = {1: ["draw", "apply", "reorient", "readHeader", "scale", "summands", "fill", "points"],
-                2: ["computeBins", "split", "parse", "fitIntercept", "write", "parseDenseInstance", "getStats", "computeGradient"],
-                3: ["predict", "toString", "induceFeaturesFor", "InvertedIndex", "ensureCapacity", 
+method_dict = {1:["draw", "apply", "reorient", "readHeader", "scale", "summands", "fill", "points"],
+                2:["computeBins", "split", "parse", "fitIntercept", "write", "parseDenseInstance", "getStats", "computeGradient"],
+                3:["predict", "toString", "induceFeaturesFor", "InvertedIndex", "ensureCapacity", 
                     "plusEquals", "optimize", "improveClustering"],
-                4: ["find", "accept", "checkBook", "test", "reallyQuit", "urlGetArgs", "connect", "mergeItem"],
-                5: ["setColors", "initializeCaches", "readId", "getCost", 
+                4:["find", "accept", "checkBook", "test", "reallyQuit", "urlGetArgs", "connect", "mergeItem"],
+                5:["setColors", "initializeCaches", "readId", "getCost", 
                     "changeServerState", "drawRenderingTimeStrings", "updateUnitPath", "compareIds"]}
 
 def is_method_header(body, index):
-    stop_punc = ["=", "!", "return ", "}", " enum "]
+    stop_punc =["=", "!", "return ", "}", " enum "]
 
     line = body[index].lstrip()
     
@@ -86,14 +86,24 @@ def is_method_header(body, index):
         
     return False
 
+# FIX: Added a global cache to prevent os.walk from looping endlessly
+file_path_cache = {}
+
 def find_file(filename, directory, xpath):
-    proj = [x for x in project_dict.values() if x in xpath] if isinstance(xpath, str) else []
+    cache_key = (filename, directory, xpath)
+    if cache_key in file_path_cache:
+        return file_path_cache[cache_key]
+        
+    proj =[x for x in project_dict.values() if x in xpath] if isinstance(xpath, str) else[]
     trunc_xpath = xpath.split("]")[0].split(proj[0])[-1].rsplit("/", 1)[0] if len(proj) > 0 else ''
     for root, dirs, files in os.walk(directory):
-        root_proj = [x for x in project_dict.values() if x in root]
+        root_proj =[x for x in project_dict.values() if x in root]
         trunc_root = root.split(root_proj[0])[-1] if len(root_proj) > 0 else ''
         if filename in files and (trunc_root == trunc_xpath or len(trunc_xpath) == 0):
-            return os.path.join(root, filename)
+            file_path_cache[cache_key] = os.path.join(root, filename)
+            return file_path_cache[cache_key]
+            
+    file_path_cache[cache_key] = None
     return None
 
 def get_method(task, short_path, line_num, xpath):
@@ -102,7 +112,8 @@ def get_method(task, short_path, line_num, xpath):
         path = find_file(short_path, f"{PROJECTS_DIR}/", xpath)
     if path is None:
         return ''
-    f = open(path, 'r')
+    # FIX: Added encoding fallback so Windows doesn't choke on special characters in Java files
+    f = open(path, 'r', encoding='utf-8', errors='ignore')
     body = f.readlines()
 
     paren = [0]
@@ -177,59 +188,35 @@ def add_method_annotations(path, test=False):
     
         cached_methods = {}
 
-        def get_method_cached(id, task, path, line_num, xpath):
+        def get_method_cached(id, task, file_path, line_num, xpath):
             if isinstance(xpath, str) and "thirdparty" in xpath:
                 return ""
-            if ".txt" in path or ".md" in path:
+            if ".txt" in file_path or ".md" in file_path:
                 return ""
-            if path not in cached_methods:
-                result = get_method(task, path, line_num, xpath)
-                cached_methods[path] = {line_num: result}
-            elif line_num not in cached_methods[path]:
-                result = get_method(task, path, line_num, xpath)
-                cached_methods[path][line_num] = result
+                
+            # FIX: Only run the heavy function once per unique file/line combo
+            if file_path not in cached_methods:
+                cached_methods[file_path] = {}
+            if line_num not in cached_methods[file_path]:
+                cached_methods[file_path][line_num] = get_method(task, file_path, line_num, xpath)
 
-            temp_path = find_file(path, f"{PROJECTS_DIR}/{task}/", xpath)
-            if temp_path is None:
-                temp_path = find_file(path, f"{PROJECTS_DIR}/", xpath)
-            if temp_path is None:
-                return ''
-            f = open(temp_path, 'r')
-            body = f.readlines()
-
-            ## Manually check instances where our function diverges from what iTrace identifies
-            ## to ensure the behavior is expected
-            if test:
-                if not isinstance(xpath, str):
-                    pass
-                else:
-                    if len(str(cached_methods[path][line_num])) == 0 and "src:function" in xpath:
-                        print("ERROR ", body[line_num-1], id, path, line_num)
-                    if len(str(cached_methods[path][line_num])) == 0 and "src:constructor" in xpath:
-                        print("ERROR ", id, path, line_num)
-                    if len(str(cached_methods[path][line_num])) == 0 and "src:function_decl" in xpath:
-                        print("ERROR ", id, path, line_num)     
-                    if len(str(cached_methods[path][line_num])) > 0 and "src:function" not in xpath and \
-                        "src:constructor" not in xpath and "src:function_decl" not in xpath:
-                            if is_method_header(body, line_num-1) or '@pos' not in xpath or\
-                                (len(body[line_num-1].rstrip()) > 1 and body[line_num-1].rstrip()[-1][-1] == "}")\
-                                or "@Override" in body[line_num-1] or "@Deprecated" in body[line_num-1]:
-                                    pass
-                            else:
-                                print("ERROR ", id, path, line_num, xpath, str(cached_methods[path][line_num]))
-            return cached_methods[path][line_num]
+            # FIX: Removed the massive block of dead test-code that was slowing the script down
+            return cached_methods[file_path][line_num]
 
         task = project_dict[int(path.split("/")[-1].split("_")[1][1:])]
 
         df['method_name'] = df.apply(lambda x: get_method_cached(path.split("/")[-1], task, x['fixation_target'], x['source_file_line'], x['xpath']), axis=1)
         fname = path.split("/")[-1]
-        path = path.rsplit("/", 1)[0]
-        Path(path + "/").mkdir(parents=True, exist_ok=True)
-        df.to_csv(path + "/processed_" + fname)
+        out_path = path.rsplit("/", 1)[0]
+        Path(out_path + "/").mkdir(parents=True, exist_ok=True)
+        df.to_csv(out_path + "/processed_" + fname)
 
 if __name__ == "__main__":
     for i in range (1, 6):
         for method in [m for m in ALL_METHODS if m in method_dict[i]]:
-            fnames = glob.glob(f"Processed Data/T{i}/P*/*{method}.csv")
+            # Windows path fix + live print statements
+            fnames =[f.replace("\\", "/") for f in glob.glob(f"Processed Data/T{i}/P*/*{method}.csv")]
             for f in fnames:
-                add_method_annotations(f)
+                if "processed_" not in f:
+                    print(f"Processing fast: {f}")
+                    add_method_annotations(f)

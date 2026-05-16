@@ -9,10 +9,12 @@ if __name__ == "__main__":
     import glob
 
     for p in list(range(3, 13)) + list(range(21, 33)):
-        path = DATA_DIR
+        # FIX: Force forward slashes so Windows doesn't break the .split("/") logic
+        path = DATA_DIR.replace("\\", "/")
         pid =''
 
-        files = [f for f in glob.glob(path + f"/P{p}-Dats/*/P*.csv")]
+        # FIX: Normalize glob outputs to forward slashes
+        files =[f.replace("\\", "/") for f in glob.glob(path + f"/P{p}-Dats/*/P*.csv")]
 
         if p< 20:
             with open(path + '/summaries_study1.csv', 'r') as s:
@@ -24,10 +26,14 @@ if __name__ == "__main__":
         for fname in files:
             with open(fname, 'r') as file:
                 project_dir = fname.rsplit(".", 2)[0].split("/")[-1].replace("_", "-")
-                project_txt = [f for f in \
-                                glob.glob(f"{path}/P{p}-Dats/{project_dir}/*.txt") \
+                
+                # FIX: Normalize text file paths to forward slashes as well
+                txt_files =[f.replace("\\", "/") for f in glob.glob(f"{path}/P{p}-Dats/{project_dir}/*.txt")]
+                
+                project_txt =[f for f in txt_files \
                                 if f.split("/")[-1].split(".")[0] in project_dict.keys() or \
                                 f.split("/")[-1].split(".")[0] == "srcimage"][0]
+                
                 participant = int(fname.split(f"{path}/P")[1].split("-Dats")[0])
                 project = project_txt.split("/")[-1].split(".")[0]
                 if project == 'srcimage':
@@ -79,4 +85,4 @@ if __name__ == "__main__":
                     df['confidence'] = confidence
 
                     Path(f"Processed Data/T{project_dict[project]}/P{p}/").mkdir(parents=True, exist_ok=True)
-                    df.to_csv(f"Processed Data/T{project_dict[project]}/P{p}/"+pid+".csv")   
+                    df.to_csv(f"Processed Data/T{project_dict[project]}/P{p}/"+pid+".csv")

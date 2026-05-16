@@ -1,6 +1,6 @@
-PROJECTS_DIR = "" # Projects Folder
+PROJECTS_DIR = r"D:\CallGraph-ReproNew" # Projects Folder
 
-DATA_DIR = "" # Data Folder
+DATA_DIR = r"D:\CallGraph-ReproNew\PreProcessedData_CallGraphVisualAttention" # Data Folder
 
 VALID_CALLEE_METHODS = [
     'Canvas:draw(Collection<Drawable>)', 

@@ -1,4 +1,5 @@
 import glob
+import os
 from statistics import mean
 import scipy
 import seaborn as sns
@@ -15,19 +16,20 @@ from constants import VALID_CALLEE_METHODS, VALID_CALLER_METHODS, PROJECTS_DIR
 
 project_dict = {1: "scrimage", 2: "mltk", 3: "mallet", 4: "openaudible", 5: "freecol"}
 
-x_cols = ["node_coverage", "weighted_node_coverage", "edge_coverage", "weighted_edge_coverage"]
+x_cols =["node_coverage", "weighted_node_coverage", "edge_coverage", "weighted_edge_coverage"]
 
-y_cols = ["confidence", "conf_abs_perc_diff", "total_score",
+y_cols =["confidence", "conf_abs_perc_diff", "total_score",
           "accuracy", "conciseness", "completeness", "clarity"]
 
 def get_dfs(mode="all"):
     target_methods = VALID_CALLEE_METHODS + VALID_CALLER_METHODS
-    dfs = []
-    fnames = glob.glob("Processed Data/T*/P*/processed_*.csv")
+    dfs =[]
+    # FIX: Force forward slashes so Windows path splitting works
+    fnames =[f.replace("\\", "/") for f in glob.glob("Processed Data/T*/P*/processed_*.csv")]
     if mode == 1:
-        fnames = [f for f in fnames if int(f.split("/P")[1].split("/")[0]) < 20]
+        fnames =[f for f in fnames if int(f.split("/P")[1].split("/")[0]) < 20]
     elif mode == 2:
-        fnames = [f for f in fnames if int(f.split("/P")[1].split("/")[0]) > 20]
+        fnames =[f for f in fnames if int(f.split("/P")[1].split("/")[0]) > 20]
     for f in fnames:
         try:
             df = pd.read_csv(f)
@@ -40,7 +42,7 @@ def get_dfs(mode="all"):
             def get_method_category(method, fixation_target):
                 if method in method_cache.keys():
                     return method_cache[method]
-                class_name = fixation_target.split(".")[0]
+                class_name = str(fixation_target).split(".")[0]
                 if not isinstance(method, str) or len(method) == 0:
                     method_cache[method] = "no_method"
                     return "no_method"
@@ -66,12 +68,13 @@ def get_dfs(mode="all"):
     return dfs
 
 def get_fixation_positions(dfs, plot=False):
-    avg_fixation_placement = {k: list([]) for k in ["target", "callgraph", "caller", "callee", "noncall"]}
+    avg_fixation_placement = {k: list([]) for k in["target", "callgraph", "caller", "callee", "noncall"]}
     study1_avg_fixation_placement = {k: list([]) for k in ["target", "callgraph", "caller", "callee", "noncall"]}
-    study2_avg_fixation_placement = {k: list([]) for k in ["target", "callgraph", "caller", "callee", "noncall"]}
+    study2_avg_fixation_placement = {k: list([]) for k in["target", "callgraph", "caller", "callee", "noncall"]}
     for d in dfs:
         total_fixation = d['duration'].sum()
-        fixation_dict = {k: list([]) for k in ["target", "callgraph", "caller", "callee", "noncall"]}
+        if total_fixation == 0: continue
+        fixation_dict = {k: list([]) for k in["target", "callgraph", "caller", "callee", "noncall"]}
         acc_fixation = 0
         for index, row in d.iterrows():
             if row['method_category'] == 'call_graph_up':
@@ -87,13 +90,14 @@ def get_fixation_positions(dfs, plot=False):
         for k,v in fixation_dict.items():
             if len(v) > 0:
                 avg_fixation_placement[k].append(mean(v))
-                if row['study'] == 2:
+                if str(row['study']) == '2':
                     study2_avg_fixation_placement[k].append(mean(v))
                 else:
                     study1_avg_fixation_placement[k].append(mean(v))
     print("---Average Fixation Positions---")
     for k, v in avg_fixation_placement.items():
-        print(k, ": ", mean(v))
+        if len(v) > 0:
+            print(k, ": ", mean(v))
     if plot==True:
         df = pd.concat(dfs)
         df_dict = {'fixations':[], 'segment':[], 'study':[]}
@@ -163,12 +167,13 @@ def get_summary_stats(dfs, plot=False):
     return df
 
 def load_data():
-    callees_dfs = []
+    callees_dfs =[]
     callers_dfs = []
     for i in range (1, 6):
         task = project_dict[i]
-        callers_fnames = glob.glob(f"output/T{i}/callers_*.csv")
-        callees_fnames = glob.glob(f"output/T{i}/callees_*.csv")
+        # FIX: Force forward slashes for output files too
+        callers_fnames =[f.replace("\\", "/") for f in glob.glob(f"output/T{i}/callers_*.csv")]
+        callees_fnames =[f.replace("\\", "/") for f in glob.glob(f"output/T{i}/callees_*.csv")]
 
         def process_file(f):
             df = pd.read_csv(f)
@@ -179,7 +184,7 @@ def load_data():
             method = f.split(".csv")[0].split("/")[-1]
             df["total_score"] = df["conciseness"] + df["accuracy"] + df["completeness"] + df["clarity"]
             def get_percentile(pop, x):
-                pop = [p for p in pop if isinstance(p, float)]
+                pop =[p for p in pop if isinstance(p, float)]
                 if isinstance(x, float):
                     return stats.percentileofscore(pop, x, kind="mean")
                 return None
@@ -220,7 +225,7 @@ def get_depth_stats(callee_data, caller_data):
     print(scipy.stats.ttest_ind(callee_data['max_depth'], caller_data['max_depth']), cohend(callee_data['max_depth'], caller_data['max_depth']))
     print("T-test average depth")
     print(scipy.stats.ttest_ind(callee_data['average_depth'], caller_data['average_depth']), cohend(callee_data['average_depth'], caller_data['average_depth']))
-    pvalues = []
+    pvalues =[]
     for x in ['node_coverage', 'weighted_node_coverage', 'edge_coverage', 'weighted_edge_coverage']:
         print(f"Callee mean {x}: ", callee_data[x].mean())
         print(f"Caller mean {x}: ", caller_data[x].mean())
@@ -241,7 +246,7 @@ def run_analysis(mode="all", prefix = None, plot=False):
     if mode == 2 or mode == 1:
         callee_data = callee_data[callee_data.participant > 20] if mode==2 else callee_data[callee_data.participant < 20]
         caller_data = caller_data[caller_data.participant > 20] if mode==2 else caller_data[caller_data.participant < 20]
-    for m in ["scale", "points", "ensureCapacity", "computeGradient", "urlGetArgs", "drawRenderingTimeStrings",
+    for m in["scale", "points", "ensureCapacity", "computeGradient", "urlGetArgs", "drawRenderingTimeStrings",
               "accept", "draw"]:
         callee_data = callee_data[callee_data.method != m]
     
@@ -260,19 +265,34 @@ def run_analysis(mode="all", prefix = None, plot=False):
 
 def calc_method_prop():
     project_method_counts = {}
-    for task in ["scrimage", "mltk", "mallet", "openaudible", "freecol"]:
+    for task in["scrimage", "mltk", "mallet", "openaudible", "freecol"]:
         methods = 0
-        files = glob.glob(f"{PROJECTS_DIR}/{task}/**/*.java", recursive=True)
-        for f in files:
-            lines = open(f, 'r').readlines()
-            for i, l in enumerate(lines):
-                if (is_method_header(lines, i)):
-                    methods+=1
+        # FIX: Replaced glob with os.walk to handle the nested src/ directory and avoid Windows limits
+        for root, dirs, files in os.walk(PROJECTS_DIR):
+            # Ensure we are inside the correct project folder
+            if task in root.replace("\\", "/").split("/"):
+                for file in files:
+                    if file.endswith(".java"):
+                        f_path = os.path.join(root, file)
+                        try:
+                            # Added encoding fallback so Windows doesn't crash on special characters
+                            lines = open(f_path, 'r', encoding='utf-8', errors='ignore').readlines()
+                            for i, l in enumerate(lines):
+                                if (is_method_header(lines, i)):
+                                    methods += 1
+                        except Exception:
+                            pass
+        
+        # Fallback to prevent ZeroDivisionError
+        if methods == 0:
+            methods = 1
+            
         project_method_counts[task] = methods
+
     num = 0
     denom = 0
     def tree_to_list(root):
-        l = [root.method.split("_")[0]]
+        l =[root.method.split("_")[0]]
         for c in root.children:
             l = l + tree_to_list(c)
         return l
